@@ -59,23 +59,35 @@ def step1_2():
 def algo_step3(patients):
     SEUIL_AIRE = 100
 
-    X = []
-    Y = []
     num_coupes = 0
 
     for numpatient in patients:
         VT = nib.load(f"subject-{numpatient + 1}-label.img").get_fdata()
-        T1 = normalisation(nib.load(f"subject-{numpatient + 1}-T1.img").get_fdata())
-        T2 = normalisation(nib.load(f"subject-{numpatient + 1}-T2.img").get_fdata())
 
         sx, sy, sz, _ = VT.shape
         for z in range(sz):
             aire = np.sum(np.where(VT[:, :, z] > 0, 1, 0))
             if aire > SEUIL_AIRE:
-                X.append([T1[:, :, z], T2[:, :, z]])
-                Y.append(np.where(VT[:, :, z] > 0, 1, 0))
                 num_coupes += 1
-    return np.array(X), np.array(Y), num_coupes
+
+    X = np.zeros((num_coupes, sx, sy, 2))
+    Y = np.zeros((num_coupes, sx, sy, 1))
+    #note a moi meme je me suis trompé en reutilisant num coupe comme indice
+    #j'ai aussi compris que mon algo de base était faux et que je devais repasser une nouvelle fois l'image afin de remplir xtrain
+    num_valid_coupe = 0
+    for numpatient in patients:
+        VT = nib.load(f"subject-{numpatient + 1}-label.img").get_fdata()
+        T1 = normalisation(nib.load(f"subject-{numpatient + 1}-T1.img").get_fdata())
+        T2 = normalisation(nib.load(f"subject-{numpatient + 1}-T2.img").get_fdata())
+        sx, sy, sz, _ = VT.shape
+        for z in range(sz):
+            aire = np.sum(np.where(VT[:, :, z] > 0, 1, 0))
+            if aire > SEUIL_AIRE:
+                X[num_valid_coupe, :, :, 0] = T1[:, :, z, 0]
+                X[num_valid_coupe, :, :, 1] = T2[:, :, z, 0]
+                Y[num_valid_coupe, :, :, 0] = VT[:, :, z, 0]
+                num_valid_coupe += 1
+    return X, Y, num_valid_coupe
 def step3():
 
     train_patients = list(range(6))
@@ -84,7 +96,10 @@ def step3():
 
 
     X_train, Y_train, num_coupes = algo_step3(train_patients)
+    print(num_coupes)
     X_validation, Y_validation, num_coupes = algo_step3(validation_patients)
+    print(num_coupes)
+    return X_train, Y_train, X_validation, Y_validation
 
 
 def unet(pretrained_weights=None, input_size=(256, 256, 1)):
@@ -137,7 +152,7 @@ def unet(pretrained_weights=None, input_size=(256, 256, 1)):
 
     model.compile(optimizer=Adam(lr=1e-4), loss='binary_crossentropy', metrics=['accuracy'])
 
-    model.summary()
+    #model.summary()
 
     if (pretrained_weights):
         model.load_weights(pretrained_weights)
@@ -147,5 +162,15 @@ def step4():
     return
 if __name__ == '__main__':
     #step1_2()
-    #step3()
-    model = unet()
+    Xtrain, Ytrain, Xval, Yval = step3()
+
+    #print(Xtrain.shape, Ytrain.shape)
+    #Xtrain = Xtrain.reshape((-1, 144, 192, 1))
+    #print(Xtrain.shape, Ytrain.shape)
+    #print(Xtrain)
+
+    # On double le nombre d'échantillon de Ytrain car leur valeur sont 0 dans tous les cas
+    #Ytrain = np.repeat(Ytrain, 2, axis=0)
+    #print(Ytrain)
+    #model = unet(input_size=(144, 192, 1))
+    #model.fit(Xtrain, Ytrain, batch_size=8, epochs=10, validation_data=(Xval, Yval))
